@@ -1,0 +1,59 @@
+# Neural network importing
+
+os.chdir('/content/MlSexDetector')
+from utils import *
+
+model_dir = '/content/MlSexDetector/output'
+K.set_learning_phase(0)
+with open(os.path.join(model_dir, 'model.json'), 'r') as fp:
+    model = model_from_json(fp.read())
+
+model.load_weights(os.path.join(model_dir, 'model.h5'))
+
+def format_out(out, dict):
+    stringify = np.vectorize(lambda x: '{}: {:0.2f}'.format(dict[x], out[x]))
+    return ', '.join(stringify(np.argsort(-out)))
+    return ""
+
+def predict(m, word):
+    out = m.predict(np.array([word2input(word, 50)]))
+    indMax = np.argmax(out[0])
+    return SEX_DICT_REVERSE[indMax]
+    
+# Sex identification
+
+workbook = openpyxl.load_workbook('/content/Comments from videos.xlsx')
+worksheet = workbook['Sheet']
+
+for i in range(2, worksheet.max_row + 1):
+  name = worksheet['F' + str(i)].value
+  morph = pymorphy2.MorphAnalyzer()
+    # Try to get gender from the Genderize API
+  try:
+        # Genderize
+    if Genderize().get([name])[0]['gender'] == 'female':
+      worksheet.cell(row=i, column=8, value= 'Ж')
+    elif Genderize().get([name])[0]['gender'] == 'male':
+      worksheet.cell(row=i, column=8, value= 'М')
+    else:
+      worksheet.cell(row=i, column=8, value= predict(model, name))
+    
+    workbook.save('/content/Comments from videos.xlsx')
+
+  except Exception as e:
+    try:
+      # If the Genderize API limit is exceeded or the API is down, use Pymorphy2 as a backup
+      parsed_word = morph.parse(name)[0]
+      if parsed_word.tag.gender == 'masc':
+        worksheet.cell(row=i, column=8, value='М')
+      elif parsed_word.tag.gender == 'femn':
+        worksheet.cell(row=i, column=8, value='Ж')
+      else:
+        worksheet.cell(row=i, column=8, value= predict(model, name))
+
+      workbook.save('/content/Comments from videos.xlsx')
+    
+    except Exception as e:
+       # If the Pymorphy2 limit is exceeded or the API is down, use neural network as a backup
+        worksheet.cell(row=i, column=8, value= predict(model, name))
+        workbook.save('/content/Comments from videos.xlsx')
